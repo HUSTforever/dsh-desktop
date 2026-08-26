@@ -17,6 +17,7 @@
 - **优雅降级**：PowerShell 7 优先，自动回退 Windows PowerShell 5.1；外部链接在系统浏览器打开
 - **启动画面**：冷启动初始化期间立即显示进度提示，不会"看起来卡死"
 - **单实例**：重复双击只会唤起已有窗口
+- **更新提醒**：侧边栏左下角自动检测桌面版与内置 dsh 的更新，一键直接下载安装包
 
 ## 📦 使用
 
@@ -78,6 +79,10 @@ pnpm run dist        # = tsdown 构建 + 后端准备 + electron-builder 打包
 | `DSH_DESKTOP_NODE` | 运行后端的 Node/Electron 二进制 |
 | `DSH_DESKTOP_USER_DATA` | 覆盖应用数据目录（多实例并行 / 隔离测试） |
 | `DSH_DESKTOP_DEBUG=1` | 将后端输出镜像到控制台 |
+| `DSH_DESKTOP_UPDATES_REPO` | 更新检测的 GitHub 仓库（默认 `HUSTforever/dsh-desktop`） |
+| `DSH_DESKTOP_UPDATES_URL` | 直接覆盖 releases API 地址（测试/镜像用） |
+| `DSH_DESKTOP_FAKE_RELEASE` | 注入伪造的 release JSON，用于离线开发更新徽标 |
+| `DSH_DESKTOP_SMOKE_DOWNLOAD=1` | 冒烟截图模式下真实走一遍下载流程（配合小型假安装包） |
 
 后端日志每次运行都会写入 `%APPDATA%\DeepSeek Harness\backend.log`。
 
@@ -89,6 +94,21 @@ pnpm run dist        # = tsdown 构建 + 后端准备 + electron-builder 打包
 electron . --smoke            # 拉起后端，打印 SMOKE_READY <url>，退出码 0
 electron . --smoke-gui a.png  # 额外隐藏加载页面并截图，打印 SMOKE_GUI_OK
 ```
+
+冒烟模式同时校验更新徽标：输出 `SMOKE_BADGE_PILL`（挂载位置 left/bottomGap 与文案）与 `SMOKE_BADGE_CARD`（展开卡片的条目和按钮）；配合 `DSH_DESKTOP_SMOKE_DOWNLOAD=1` 还会点击「下载安装包」并输出 `SMOKE_BADGE_DOWNLOAD` 终态（含落盘路径），用小型假安装包即可完整验证下载管线。
+
+## 🔔 更新提示
+
+主窗口**侧边栏左下角**内置更新徽标，同时跟踪两条更新线：
+
+| 通道 | 本地版本 | 最新版本来源 |
+|---|---|---|
+| 桌面版 | 应用自身版本 | Releases 最新 tag（`vX.Y.Z`） |
+| 内置 dsh | 打包时记录于 `backend/.dsh-version` | 最新 release 正文中的 `dsh-version: X.Y.Z` 行 |
+
+任一通道落后时，左下角出现「⬆ 发现更新」胶囊：点击展开卡片查看两个通道的版本跃迁，「下载安装包」直接把 NSIS 安装包原生下载到系统 Downloads 目录（徽标实时显示进度），完成后可「打开所在文件夹」或「立即安装」（自动退出当前实例并拉起安装程序）。「稍后再提醒」可临时收起；后台每 4 小时自动复查一次，也可用 Help → 检查更新… 手动触发。网络失败静默处理，不打扰使用。
+
+> 发布约定：release 正文中包含一行 `dsh-version: <版本>` 即视为声明该版捆绑的 dsh 版本；缺失时仅检测桌面版通道。安装包资产名需匹配 `DeepSeek-Harness-Setup-*.exe`（或回退 portable 版）。由于 dsh 与桌面版随同一个安装包分发，任一通道落后都会引导下载该新版安装包，一次完成双组件升级。
 
 ## ❓ 常见问题
 

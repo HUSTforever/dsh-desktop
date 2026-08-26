@@ -284,6 +284,16 @@ const pruneBrokenLinks = (dir) => {
 pruneBrokenLinks(modulesRoot)
 console.log('+ pruned the .pnpm virtual store and dangling links')
 
+// Record the exact bundled dsh CLI version so the desktop updater badge can
+// compare it against the releases feed at runtime (backend/.dsh-version).
+const cliManifest = readManifest(backendDir)
+if (cliManifest === undefined || typeof cliManifest.version !== 'string') {
+  throw new Error('prepared backend is missing its package.json version')
+}
+writeFileSync(join(backendDir, '.dsh-version'), cliManifest.version + '
+')
+console.log('+ recorded bundled dsh version:', cliManifest.version)
+
 // 3. Bundle the real Node runtime the packaged backend runs on. Downloaded
 // from the npmmirror mirror first, nodejs.org as fallback; verified by
 // running it before the smoke boot below.

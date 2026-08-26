@@ -25,7 +25,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { UpdateCoordinator } from './update.js'
+import { applyBadgeStateJs, BADGE_BOOTSTRAP } from './badge.js'
 
 /** The backend's readiness line; captures the canonical loopback URL. */
 const READY_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)/
@@ -48,9 +50,135 @@ interface Backend {
 }
 
 let mainWindow: BrowserWindow | undefined
+/** The transient screenshot window of --smoke-gui; also receives badge pushes. */
+let smokeWindow: BrowserWindow | undefined
 let backend: Backend | undefined
 /** True once teardown owns the backend, so its exit is not reported as a crash. */
 let stopping = false
+
+/**
+ * Update state owner. Checks the desktop repository's Releases feed for both
+ * channels (this shell via the release tag, the bundled dsh via the release
+ * body's dsh-version line) and pushes every transition to the windows
+ * carrying the injected badge.
+ */
+const updater = new UpdateCoordinator()
+
+/** Send one update-state snapshot to every window showing the badge. */
+function broadcastUpdateState(): void {
+  for (const win of [mainWindow, smokeWindow]) {
+    if (win !== undefined && !win.isDestroyed()) win.webContents.send('updates:state-changed', updater.getState())
+  }
+}
+
+updater.subscribe(broadcastUpdateState)
+
+/**
+ * Install a downloaded update: tear the backend down cleanly, launch the NSIS
+ * installer detached (it takes over from there), and quit this instance.
+ */
+async function installDownloadedUpdate(): Promise<void> {
+  const file = updater.getState().filePath
+  if (file === undefined || !existsSync(file)) return
+  stopping = true
+  await killTree(backend?.child.pid)
+  const installer = spawn(file, [], { detached: true, stdio: 'ignore', windowsHide: true })
+  installer.unref()
+  app.quit()
+}
+
+/** Register the IPC surface the preload bridge exposes to the injected badge. */
+function installUpdateIpc(): void {
+  ipcMain.handle('updates:get-state', () => updater.getState())
+  ipcMain.handle('updates:start-download', () => { updater.startDownload(mainWindow ?? smokeWindow) })
+  ipcMain.handle('updates:open-releases', () => {
+    const url = updater.getState().releaseUrl
+    if (url !== undefined) void shell.openExternal(url)
+  })
+  ipcMain.handle('updates:open-file', () => {
+    const file = updater.getState().filePath
+    if (file !== undefined) shell.showItemInFolder(file)
+  })
+  ipcMain.handle('updates:install', () => { void installDownloadedUpdate() })
+}
+
+/**
+ * Inject the bottom-left update badge into a window's page and keep it alive
+ * across reloads; every injection re-applies the current state immediately.
+ */
+function attachBadge(win: BrowserWindow): void {
+  const inject = (): void => {
+    win.webContents.executeJavaScript(BADGE_BOOTSTRAP)
+      .then(() => win.webContents.executeJavaScript(applyBadgeStateJs(updater.getState())))
+      .catch(() => { /* mid-navigation races retry on the next did-finish-load */ })
+  }
+  win.webContents.on('did-finish-load', inject)
+}
+
+/**
+ * Manual check-for-updates (Help menu): run a check now and report the
+ * outcome in a dialog - the passive badge stays silent about failures.
+ */
+async function manualUpdateCheck(): Promise<void> {
+  const state = await updater.refresh()
+  if (state.status === 'available') {
+    const lines = state.items.map(item => item.kind === 'desktop'
+      ? ['桌面版 ', item.current, ' → ', item.latest].join('')
+      : ['内置 dsh ', item.current, ' → ', item.latest].join(''))
+    void dialog.showMessageBox({
+      type: 'info',
+      title: 'DeepSeek Harness',
+      message: '发现可用更新',
+      detail: lines.join('\n') + '\n\n点击主窗口左下角的「发现更新」即可直接下载安装包。',
+    })
+  } else if (state.status === 'downloading' || state.status === 'downloaded') {
+    void dialog.showMessageBox({
+      type: 'info',
+      title: 'DeepSeek Harness',
+      message: '更新安装包正在处理中',
+      detail: '请查看主窗口左下角的更新提示。',
+    })
+  } else {
+    void dialog.showMessageBox({
+      type: 'info',
+      title: 'DeepSeek Harness',
+      message: state.errorNote !== undefined ? ['检查更新失败：', state.errorNote].join('') : '已是最新版本',
+      ...(state.dshLocal === undefined ? {} : { detail: ['当前版本：桌面版 ', app.getVersion(), '，内置 dsh ', state.dshLocal].join('') }),
+    })
+  }
+}
+
+/** How often the shell re-checks the releases feed in the background. */
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
+
+/**
+ * Smoke-mode probe: report whether the update badge is mounted, where it
+ * sits, and what it advertises. With openCard it also clicks the pill first
+ * and reports the expanded card contents.
+ */
+function badgeProbeJs(openCard: boolean): string {
+  const clickLine = openCard
+    ? 'var clickPill = host.querySelector(".dsh-upd-pill"); if (clickPill) { clickPill.click(); }'
+    : ''
+  return [
+    '(function () {',
+    'var host = document.getElementById("dsh-update-badge");',
+    'if (!host) { return JSON.stringify({ present: false }); }',
+    clickLine,
+    'var rect = host.getBoundingClientRect();',
+    'var pill = host.querySelector(".dsh-upd-pill");',
+    'var card = host.querySelector(".dsh-upd-card");',
+    'return JSON.stringify({',
+    'present: true,',
+    'pillText: pill ? pill.textContent : null,',
+    'left: Math.round(rect.left),',
+    'bottomGap: Math.round(window.innerHeight - rect.bottom),',
+    'items: card ? Array.prototype.map.call(card.querySelectorAll(".dsh-upd-item"), function (n) { return n.textContent; }) : [],',
+    'buttons: card ? Array.prototype.map.call(card.querySelectorAll(".dsh-upd-btn"), function (n) { return n.textContent; }) : []',
+    '});',
+    '})()',
+  ].filter(Boolean).join('\n')
+}
 
 /** `--smoke-gui <path>`: screenshot mode. */
 const smokeGuiIndex = process.argv.indexOf('--smoke-gui')
@@ -215,6 +343,7 @@ function createWindow(url: string): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       devTools: !app.isPackaged,
+      preload: join(thisDir, 'preload.cjs'),
     },
   })
   win.once('ready-to-show', () => {
@@ -235,6 +364,7 @@ function createWindow(url: string): BrowserWindow {
     logChunk(`renderer gone: ${details.reason}\n`)
   })
   win.on('closed', () => { mainWindow = undefined })
+  attachBadge(win)
   void win.loadURL(url)
   return win
 }
@@ -265,7 +395,13 @@ function installMenu(): void {
     ] },
     { label: '&Help', submenu: [
       {
+        label: '检查更新… / Check for Updates…',
+        click: () => { void manualUpdateCheck() },
+      },
+      { type: 'separator' },
+      {
         label: 'DeepSeek Harness repository',
+
         click: () => { void shell.openExternal('https://github.com/deepseek-ai/deepseek-harness') },
       },
       {
@@ -320,8 +456,14 @@ async function runSmokeGui(url: string, outPath: string): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: join(thisDir, 'preload.cjs'),
     },
   })
+  smokeWindow = win
+  attachBadge(win)
+  // Let the update check land before the capture (instant under
+  // DSH_DESKTOP_FAKE_RELEASE, best-effort otherwise).
+  void updater.refresh()
   void win.loadURL(url)
   try {
     await Promise.race([
@@ -333,6 +475,43 @@ async function runSmokeGui(url: string, outPath: string): Promise<void> {
           })
         })
         await new Promise(resolve => setTimeout(resolve, 3_000))
+        // Verify the injected update badge before capturing: passive pill,
+        // then the expanded card. Probe failures never fail the capture.
+        try {
+          const pill = await win.webContents.executeJavaScript(badgeProbeJs(false))
+          console.log(`SMOKE_BADGE_PILL ${pill}`)
+          logChunk(`SMOKE_BADGE_PILL ${pill}\n`)
+          const card = await win.webContents.executeJavaScript(badgeProbeJs(true))
+          console.log(`SMOKE_BADGE_CARD ${card}`)
+          logChunk(`SMOKE_BADGE_CARD ${card}\n`)
+        } catch (probeError) {
+          console.log(`SMOKE_BADGE probe-failed: ${String(probeError)}`)
+        }
+        // With DSH_DESKTOP_SMOKE_DOWNLOAD=1 also drive the full download
+        // path: click the primary badge button and wait for the installer
+        // to land in Downloads (the caller serves a tiny fake asset).
+        if (process.env.DSH_DESKTOP_SMOKE_DOWNLOAD === '1') {
+          try {
+            await win.webContents.executeJavaScript(
+              'var b = document.querySelector(".dsh-upd-btn.dsh-upd-primary"); b && b.click(); true',
+            )
+            const finalState = await win.webContents.executeJavaScript([
+              '(function () { return new Promise(function (resolve) {',
+              '  var tries = 0;',
+              '  (function poll () {',
+              '    window.dshDesktop.getState().then(function (s) {',
+              '      if (s.status === "downloaded" || s.errorNote || tries++ > 100) resolve(JSON.stringify(s));',
+              '      else setTimeout(poll, 500);',
+              '    });',
+              '  })();',
+              '}); })()',
+            ].join('\n'))
+            console.log(`SMOKE_BADGE_DOWNLOAD ${finalState}`)
+            logChunk(`SMOKE_BADGE_DOWNLOAD ${finalState}\n`)
+          } catch (downloadError) {
+            console.log(`SMOKE_BADGE_DOWNLOAD failed: ${String(downloadError)}`)
+          }
+        }
         const image = await win.webContents.capturePage()
         writeFileSync(outPath, image.toPNG())
         console.log(`SMOKE_GUI_OK ${outPath}`)
@@ -348,6 +527,7 @@ async function runSmokeGui(url: string, outPath: string): Promise<void> {
     process.exitCode = 2
   } finally {
     stopping = true
+    smokeWindow = undefined
     win.destroy()
     await killTree(backend?.child.pid)
     // process.exitCode admits string values ('SIGINT'); app.exit needs a number.
@@ -360,6 +540,7 @@ async function runSmokeGui(url: string, outPath: string): Promise<void> {
 async function run(): Promise<void> {
   openLog()
   installMenu()
+  installUpdateIpc()
   if (!smokeOnly && smokeGuiPath === undefined) createSplash()
   const bin = resolveBackendBin()
   if (!existsSync(bin)) {
@@ -405,6 +586,12 @@ async function run(): Promise<void> {
     return
   }
   mainWindow = createWindow(url)
+  // First check shortly after the GUI settles, then periodically. The timer
+  // never keeps the process alive on its own.
+  const firstCheck = setTimeout(() => { void updater.refresh() }, 8_000)
+  firstCheck.unref()
+  const interval = setInterval(() => { void updater.refresh() }, UPDATE_CHECK_INTERVAL_MS)
+  interval.unref()
 }
 
 // Registering this listener takes over Electron's default quit-on-all-closed:

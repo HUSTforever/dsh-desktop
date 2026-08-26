@@ -1,0 +1,16 @@
+feat: bottom-left update badge with one-click installer download
+
+- src/version.ts: semver compare (prerelease-aware), tag/body parsing,
+  installer asset picking
+- src/update.ts: UpdateCoordinator checks HUSTforever/dsh-desktop
+  releases for two channels (desktop shell via tag vs app version;
+  bundled dsh via the release body dsh-version line vs the
+  backend/.dsh-version marker written by prepare-backend), drives the
+  native download into Downloads with live progress
+- src/preload.ts: sandboxed contextBridge exposing window.dshDesktop
+- src/badge.ts: self-contained overlay injected into the web GUI,
+  pinned bottom-left, SPA-surviving
+- src/main.ts: IPC surface, badge injection, 4h background checks,
+  Help menu check-for-updates dialog, install-after-download flow,
+  SMOKE_BADGE probes plus optional DSH_DESKTOP_SMOKE_DOWNLOAD e2e
+- tests/update-logic.test.mjs: unit checks for the pure logic
