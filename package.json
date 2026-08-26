@@ -1,0 +1,23 @@
+{
+  "name": "dsh-desktop",
+  "description": "DeepSeek Harness Windows desktop shell (standalone project): an Electron window over the bundled dsh web backend",
+  "version": "0.1.0-rc.5",
+  "author": "DeepSeek",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsdown",
+    "backend:prepare": "node scripts/prepare-backend.mjs",
+    "dev": "npm run build && electron .",
+    "dist": "npm run build && npm run backend:prepare && electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "43.4.0",
+    "electron-builder": "^26.15.3",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,37 @@
+appId: ai.deepseek.dsh.desktop
+productName: DeepSeek Harness
+copyright: Copyright © 2026 DeepSeek
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+asar: true
+npmRebuild: false
+compression: normal
+afterPack: ./scripts/after-pack.cjs
+electronLanguages:
+  - en-US
+  - zh-CN
+  - zh-TW
+win:
+  icon: build/icon.ico
+  executableName: DeepSeekHarness
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: DeepSeek Harness
+  artifactName: DeepSeek-Harness-Setup-${version}.${ext}
+portable:
+  artifactName: DeepSeek-Harness-${version}-portable.${ext}
