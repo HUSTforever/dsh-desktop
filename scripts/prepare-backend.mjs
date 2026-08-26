@@ -2,8 +2,8 @@
  * Rebuild the desktop project's `backend/`: a self-contained copy of the dsh
  * CLI and its production dependency closure, flat-hoisted so every bare
  * specifier resolves on any Node engine, then smoke-tested by actually
- * booting `dsh web` on the same engine the packaged app uses (Electron's
- * embedded Node, which resolves modules with `preserveSymlinks`).
+ * booting `dsh web` on the same engine the packaged app uses (a bundled real
+ * Node runtime — Electron's embedded Node breaks native-FFI codepaths).
  * The dsh sources come from the sibling official repository (`DSH_REPO`).
  *
  * Steps:
@@ -18,15 +18,19 @@
  *      preserveSymlinks. Workspace packages copy their published surface
  *      (which carries the built web frontend `dist/`), registry packages
  *      copy whole from the deploy's `.pnpm` virtual store.
- *   3. Boot `backend/lib/bin.js web --port 0` and wait for the readiness
- *      URL line — this exercises profile init, module resolution, config
- *      load, the webserver bind, and the frontend dist path in one run.
+ *   3. Bundle a real Node runtime (`backend/runtime/node.exe`) for the same
+ *      reason: Electron's embedded Node dies with a fatal NAPI error inside
+ *      native-FFI code (the Win32 folder-dialog worker's koffi calls).
+ *   4. Boot `backend/lib/bin.js web --port 0` with that bundled Node and wait
+ *      for the readiness URL line — this exercises profile init, module
+ *      resolution, config load, the webserver bind, and the frontend dist
+ *      path in one run.
  *
  * Run from the desktop project root: `node scripts/prepare-backend.mjs`.
  */
 
 import { spawn, spawnSync } from 'node:child_process'
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -39,6 +43,9 @@ const repoRoot = process.env.DSH_REPO ?? resolve(desktopDir, '..', 'deepseek-har
 const backendDir = join(desktopDir, 'backend')
 const electronNode = join(desktopDir, 'node_modules', 'electron', 'dist', 'electron.exe')
 const SMOKE_TIMEOUT_MS = 90_000
+
+/** The real Node runtime version bundled into `backend/runtime/node.exe`. */
+const BUNDLED_NODE_VERSION = 'v24.15.0'
 
 /** Run one command to completion, failing the script on a non-zero exit. */
 function run(command, args, options = {}) {
@@ -277,9 +284,43 @@ const pruneBrokenLinks = (dir) => {
 pruneBrokenLinks(modulesRoot)
 console.log('+ pruned the .pnpm virtual store and dangling links')
 
-// 3. Smoke: boot dsh web on the packaged app's engine and wait for readiness.
+// 3. Bundle the real Node runtime the packaged backend runs on. Downloaded
+// from the npmmirror mirror first, nodejs.org as fallback; verified by
+// running it before the smoke boot below.
+const runtimeDir = join(backendDir, 'runtime')
+const runtimeNode = join(runtimeDir, 'node.exe')
+if (!existsSync(runtimeNode)) {
+  mkdirSync(runtimeDir, { recursive: true })
+  const sources = [
+    `https://npmmirror.com/mirrors/node/${BUNDLED_NODE_VERSION}/win-x64/node.exe`,
+    `https://nodejs.org/dist/${BUNDLED_NODE_VERSION}/win-x64/node.exe`,
+  ]
+  let lastError
+  for (const source of sources) {
+    try {
+      console.log(`+ downloading bundled Node ${BUNDLED_NODE_VERSION} from ${source}`)
+      const response = await fetch(source, { redirect: 'follow' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      writeFileSync(runtimeNode, Buffer.from(await response.arrayBuffer()))
+      lastError = undefined
+      break
+    } catch (error) {
+      lastError = error
+      rmSync(runtimeNode, { force: true })
+    }
+  }
+  if (lastError !== undefined) throw new Error(`could not download Node ${BUNDLED_NODE_VERSION}: ${String(lastError)}`)
+}
+const runtimeVersion = spawnSync(runtimeNode, ['--version'], { encoding: 'utf8', windowsHide: true })
+if (runtimeVersion.status !== 0 || !runtimeVersion.stdout?.trim().startsWith('v')) {
+  throw new Error(`bundled Node at ${runtimeNode} does not run: ${(runtimeVersion.stderr ?? '').slice(0, 200)}`)
+}
+console.log(`+ bundled Node runtime ready: ${runtimeNode} (${runtimeVersion.stdout.trim()})`)
+
+// 4. Smoke: boot dsh web on exactly the engine the packaged app uses — the
+// bundled real Node — and wait for readiness.
 const smokeHome = join(tmpdir(), `dsh-desktop-smoke-${process.pid}`)
-const nodeBinary = existsSync(electronNode) ? electronNode : process.execPath
+const nodeBinary = runtimeNode
 const bin = join(backendDir, 'lib', 'bin.js')
 console.log(`+ smoke boot: ${nodeBinary} ${bin} web (DSH_HOME=${smokeHome})`)
 const child = spawn(nodeBinary, ['--expose-internals', bin, 'web', '--host', '127.0.0.1', '--port', '0'], {

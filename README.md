@@ -59,7 +59,7 @@ pnpm run dist        # = tsdown 构建 + 后端准备 + electron-builder 打包
 ┌──────────────────────────── Electron 主进程 ────────────────────────────┐
 │  1. spawn 内置后端                                                       │
 │     <engine> backend/lib/bin.js web --host 127.0.0.1 --port 0           │
-│     · 打包版 engine = Electron 自带 Node（ELECTRON_RUN_AS_NODE）          │
+│     · 打包版 engine = 内置的真实 Node 24 运行时（backend/runtime/node.exe）│
 │       并附加 --expose-internals 以启用 Loader 内部钩子（HMR/bare-import） │
 │     · 开发模式 engine = 系统 node                                        │
 │  2. 等待就绪行 "dsh web: http://127.0.0.1:<port>"                        │
@@ -67,7 +67,7 @@ pnpm run dist        # = tsdown 构建 + 后端准备 + electron-builder 打包
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-后端依赖树由 `scripts/prepare-backend.mjs` 从官方仓库生成：`pnpm deploy --legacy` 取得生产闭包后，将闭包内所有工作区与 registry 包**扁平化 hoist** 到顶层 `node_modules`（绕过 legacy deploy 跳过 `workspace:^` peer 的缺陷与 Electron Node 的 `preserveSymlinks` 限制），删除冗余 `.pnpm` 层，并在打包前用 Electron 引擎真实 boot `dsh web` 做冒烟验证。electron-builder 自身的文件复制无条件排除 `node_modules`，因此由 `scripts/after-pack.cjs` 在 afterPack 阶段把整棵后端树复制进 resources。
+后端依赖树由 `scripts/prepare-backend.mjs` 从官方仓库生成：`pnpm deploy --legacy` 取得生产闭包后，将闭包内所有工作区与 registry 包**扁平化 hoist** 到顶层 `node_modules`（绕过 legacy deploy 跳过 `workspace:^` peer 的缺陷与 Electron Node 的 `preserveSymlinks` 限制），删除冗余 `.pnpm` 层，并下载一个真实的 Node 运行时到 `backend/runtime/node.exe` —— Electron 内置 Node 在原生 FFI 调用上会崩溃（如目录选择器的 Win32 对话框 worker），因此打包版后端与它派生的全部子进程都跑在这个内置运行时上。随后用该引擎真实 boot `dsh web` 做冒烟验证。electron-builder 自身的文件复制无条件排除 `node_modules`，因此由 `scripts/after-pack.cjs` 在 afterPack 阶段把整棵后端树复制进 resources。
 
 ## 🔧 环境变量
 
@@ -76,6 +76,7 @@ pnpm run dist        # = tsdown 构建 + 后端准备 + electron-builder 打包
 | `DSH_REPO` | 官方仓库根目录（默认同级 `../deepseek-harness`） |
 | `DSH_DESKTOP_BACKEND` | 直接指定 CLI `lib/bin.js` 路径（开发/测试覆盖） |
 | `DSH_DESKTOP_NODE` | 运行后端的 Node/Electron 二进制 |
+| `DSH_DESKTOP_USER_DATA` | 覆盖应用数据目录（多实例并行 / 隔离测试） |
 | `DSH_DESKTOP_DEBUG=1` | 将后端输出镜像到控制台 |
 
 后端日志每次运行都会写入 `%APPDATA%\DeepSeek Harness\backend.log`。

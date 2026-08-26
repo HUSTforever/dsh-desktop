@@ -96,12 +96,24 @@ function logChunk(chunk: string): void {
  * @param bin - absolute path of the CLI `lib/bin.js`.
  * @returns the running child.
  */
+/**
+ * The real Node runtime bundled inside the packaged backend, if present.
+ * Electron's embedded Node breaks native-FFI codepaths (the Win32
+ * folder-dialog worker dies with a fatal NAPI error), so a packaged build
+ * runs the backend — and every process the backend spawns — on this engine.
+ */
+function bundledRuntimeNode(): string | undefined {
+  if (!app.isPackaged) return undefined
+  const candidate = join(process.resourcesPath, 'backend', 'runtime', 'node.exe')
+  return existsSync(candidate) ? candidate : undefined
+}
+
 function startBackend(bin: string): ChildProcess {
   const nodeBinary = process.env.DSH_DESKTOP_NODE
+    ?? bundledRuntimeNode()
     ?? (app.isPackaged ? process.execPath : 'node')
   // --expose-internals: the Loader's internal-hook access (HMR, bare-module
-  // imports) needs Node internals; the native addon fallback is built for the
-  // real Node ABI and cannot load inside Electron's Node.
+  // imports) needs Node internals.
   const child = spawn(nodeBinary, ['--expose-internals', bin, 'web', '--host', '127.0.0.1', '--port', '0'], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     cwd: dirname(bin),
@@ -413,7 +425,11 @@ app.on('before-quit', (event) => {
 
 // The userData directory (and the single-instance lock keyed on it) follows
 // the package `name` unless set explicitly; pin the product name first.
+// `DSH_DESKTOP_USER_DATA` moves both to an arbitrary directory — parallel
+// instances and isolated verification runs need that.
 app.setName('DeepSeek Harness')
+const customUserData = process.env.DSH_DESKTOP_USER_DATA
+if (customUserData !== undefined && customUserData !== '') app.setPath('userData', resolve(customUserData))
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
