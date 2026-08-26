@@ -20,10 +20,12 @@
 
 ## 📦 使用
 
+从 [Releases](https://github.com/HUSTforever/dsh-desktop/releases/latest) 下载：
+
 | 方式 | 启动耗时 | 说明 |
 |---|---|---|
-| 安装包 `DeepSeek-Harness-Setup-*.exe` | 首次 ~20s，之后 ~2s | 推荐。桌面/开始菜单快捷方式 |
-| 免安装目录 `release/win-unpacked/DeepSeekHarness.exe` | ~2s | 复制整个文件夹到任意位置即可 |
+| **安装包** `DeepSeek-Harness-Setup-*.exe` | 首次 ~20s，之后 ~2s | **推荐**。运行后自动安装完整的 dsh 后端到本机，并创建桌面/开始菜单快捷方式，装完双击图标即可使用 |
+| 免安装目录 `win-unpacked/`（随源码构建） | ~2s | 复制整个文件夹到任意位置即可 |
 | 便携版 `DeepSeek-Harness-*-portable.exe` | 每次 ~4–5 分钟 | 单文件便于分发；每次启动需自解压全部载荷 |
 
 首次运行 SmartScreen 提示为未签名程序的正常现象：选择「更多信息 → 仍要运行」。
@@ -43,13 +45,6 @@ pnpm install && pnpm run build:web
 cd ../desktop
 pnpm install
 pnpm run dist        # = tsdown 构建 + 后端准备 + electron-builder 打包
-```
-
-无法访问 GitHub 的网络请先导出 npmmirror 镜像：
-
-```sh
-$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
-$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
 ```
 
 产物输出到 `release/`：
