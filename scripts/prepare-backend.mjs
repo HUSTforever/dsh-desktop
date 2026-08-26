@@ -290,8 +290,7 @@ const cliManifest = readManifest(backendDir)
 if (cliManifest === undefined || typeof cliManifest.version !== 'string') {
   throw new Error('prepared backend is missing its package.json version')
 }
-writeFileSync(join(backendDir, '.dsh-version'), cliManifest.version + '
-')
+writeFileSync(join(backendDir, '.dsh-version'), cliManifest.version + '\n')
 console.log('+ recorded bundled dsh version:', cliManifest.version)
 
 // 3. Bundle the real Node runtime the packaged backend runs on. Downloaded
