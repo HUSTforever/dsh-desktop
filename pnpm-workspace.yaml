@@ -3,7 +3,7 @@ packages:
 
 # pnpm 10+ blocks any dependency shipping an install/build script until it is
 # explicitly reviewed here. Electron's postinstall downloads the runtime
-# binary; electron-winstaller's is a no-op for NSIS/portable targets.
+# binary; electron-winstaller's is a no-op for the NSIS target.
 allowBuilds:
   electron: true
   electron-winstaller: false

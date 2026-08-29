@@ -23,11 +23,9 @@
 
 从 [Releases](https://github.com/HUSTforever/dsh-desktop/releases/latest) 下载：
 
-| 方式 | 启动耗时 | 说明 |
-|---|---|---|
-| **安装包** `DeepSeek-Harness-Setup-*.exe` | 首次 ~20s，之后 ~2s | **推荐**。运行后自动安装完整的 dsh 后端到本机，并创建桌面/开始菜单快捷方式，装完双击图标即可使用 |
-| 免安装目录 `win-unpacked/`（随源码构建） | ~2s | 复制整个文件夹到任意位置即可 |
-| 便携版 `DeepSeek-Harness-*-portable.exe` | 每次 ~4–5 分钟 | 单文件便于分发；每次启动需自解压全部载荷 |
+下载 **安装包** `DeepSeek-Harness-Setup-*.exe`。运行后会安装完整的 dsh 后端，并创建桌面和开始菜单快捷方式；首次启动约 20 秒，之后通常约 2 秒。
+
+本项目仅发布安装包，不提供便携版或免安装目录版。
 
 首次运行 SmartScreen 提示为未签名程序的正常现象：选择「更多信息 → 仍要运行」。
 
@@ -45,14 +43,10 @@ pnpm install && pnpm run build:web
 # 2. 本项目：构建桌面产物
 cd ../desktop
 pnpm install
-pnpm run dist        # = tsdown 构建 + 后端准备 + electron-builder 打包
+pnpm run dist        # = tsdown 构建 + 后端准备 + NSIS 安装包打包
 ```
 
-产物输出到 `release/`：
-
-- `DeepSeek-Harness-<version>-portable.exe`
-- `DeepSeek-Harness-Setup-<version>.exe`
-- `win-unpacked/` — 免安装目录版
+产物输出到 `release/DeepSeek-Harness-Setup-<version>.exe`。构建成功后会自动删除解包目录、更新元数据、旧版本和其他中间产物，确保 `release/` 只保留当前版本安装包。
 
 ## 🏗️ 工作原理
 
@@ -108,12 +102,11 @@ electron . --smoke-gui a.png  # 额外隐藏加载页面并截图，打印 SMOKE
 
 任一通道落后时，左下角出现「⬆ 发现更新」胶囊：点击展开卡片查看两个通道的版本跃迁，「下载安装包」直接把 NSIS 安装包原生下载到系统 Downloads 目录（徽标实时显示进度），完成后可「打开所在文件夹」或「立即安装」（自动退出当前实例并拉起安装程序）。「稍后再提醒」可临时收起；后台每 4 小时自动复查一次，也可用 Help → 检查更新… 手动触发。网络失败静默处理，不打扰使用。
 
-> 发布约定：release 正文中包含一行 `dsh-version: <版本>` 即视为声明该版捆绑的 dsh 版本；缺失时仅检测桌面版通道。安装包资产名需匹配 `DeepSeek-Harness-Setup-*.exe`（或回退 portable 版）。由于 dsh 与桌面版随同一个安装包分发，任一通道落后都会引导下载该新版安装包，一次完成双组件升级。
+> 发布约定：release 正文中包含一行 `dsh-version: <版本>` 即视为声明该版捆绑的 dsh 版本；缺失时仅检测桌面版通道。安装包资产名必须匹配 `DeepSeek-Harness-Setup-*.exe`，便携版资产不会被更新器接受。由于 dsh 与桌面版随同一个安装包分发，任一通道落后都会引导下载该新版安装包，一次完成双组件升级。
 
 ## ❓ 常见问题
 
 - **SmartScreen 拦截**：产物未签名所致，选择「仍要运行」即可。
-- **便携版很慢**：便携格式每次启动都要整体自解压（约 4–5 分钟），日常使用请选安装版或免安装目录版。
 - **首次启动约 20 秒**：正在初始化 profile 与加载 120+ 插件，仅第一次；之后秒级。
 - **想看后端日志**：`%APPDATA%\DeepSeek Harness\backend.log`。
 
@@ -130,7 +123,7 @@ electron . --smoke-gui a.png  # 额外隐藏加载页面并截图，打印 SMOKE
 
 **DSH Desktop** packages [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh web`) into a single double-clickable Windows desktop app: an Electron window over a fully bundled local backend — no Node.js, pnpm, or command line required.
 
-- Download the installer from Releases and run it, or grab `win-unpacked/` for a no-install experience.
+- Download and run `DeepSeek-Harness-Setup-*.exe` from Releases. Installer builds are the only supported distribution format.
 - Configure your model + API key in Settings → Models (or set `DEEPSEEK_API_KEY`).
 - Sessions live in `%USERPROFILE%\.dsh`, shared with any dsh CLI install.
 

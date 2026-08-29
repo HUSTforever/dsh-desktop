@@ -22,9 +22,6 @@ win:
     - target: nsis
       arch:
         - x64
-    - target: portable
-      arch:
-        - x64
 nsis:
   oneClick: false
   perMachine: false
@@ -33,5 +30,3 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: DeepSeek Harness
   artifactName: DeepSeek-Harness-Setup-${version}.${ext}
-portable:
-  artifactName: DeepSeek-Harness-${version}-portable.${ext}

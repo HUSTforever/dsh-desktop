@@ -11,7 +11,7 @@
     "build": "tsdown",
     "backend:prepare": "node scripts/prepare-backend.mjs",
     "dev": "npm run build && electron .",
-    "dist": "npm run build && npm run backend:prepare && electron-builder --win --x64"
+    "dist": "npm run build && npm run backend:prepare && electron-builder --win nsis --x64 && node scripts/keep-installer-only.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

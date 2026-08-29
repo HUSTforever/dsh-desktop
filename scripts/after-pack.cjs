@@ -5,7 +5,7 @@
  * electron-builder unconditionally excludes `node_modules` from every file
  * copy (see app-builder-lib/src/fileMatcher.ts), so the backend dependency
  * tree cannot ride `extraResources`. afterPack runs after `win-unpacked` is
- * assembled and before the NSIS/portable targets package it, which is exactly
+ * assembled and before the NSIS target packages it, which is exactly
  * the window this copy needs.
  * @type {import('app-builder-lib').AfterPackContext}
  */

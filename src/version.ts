@@ -117,14 +117,11 @@ export function parseDshVersionFromBody(body: string | null | undefined): string
 }
 
 /**
- * Pick the installer asset a user should download: the NSIS setup exe when
- * present, otherwise the portable exe. Blockmaps/yml never qualify.
+ * Pick the NSIS installer asset a user should download. Portable executables,
+ * blockmaps, and update metadata never qualify.
  * @returns the asset's download URL or undefined when the release ships none.
  */
 export function pickInstallerAsset(assets: ReleaseAsset[]): string | undefined {
   const setup = assets.find(asset => /^DeepSeek-Harness-Setup-[0-9][^/]*\.exe$/i.test(asset.name))
-  if (setup !== undefined) return setup.browser_download_url
-  const portable = assets.find(asset => /^DeepSeek-Harness-[0-9][^/]*-portable\.exe$/i.test(asset.name))
-  if (portable !== undefined) return portable.browser_download_url
-  return undefined
+  return setup?.browser_download_url
 }

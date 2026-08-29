@@ -48,7 +48,7 @@ const portableOnly = [
   { name: 'DeepSeek-Harness-0.2.0-portable.exe', browser_download_url: 'https://x/portable' },
   { name: 'latest.yml', browser_download_url: 'https://x/latest.yml' },
 ]
-assert.equal(pickInstallerAsset(portableOnly), 'https://x/portable')
+assert.equal(pickInstallerAsset(portableOnly), undefined, 'portable builds are not supported')
 assert.equal(pickInstallerAsset([{ name: 'readme.txt', browser_download_url: 'https://x/r' }]), undefined)
 
 // --- badge script integrity ---------------------------------------------------
